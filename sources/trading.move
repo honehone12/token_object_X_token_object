@@ -16,6 +16,7 @@ module token_object_x_token_object::trading {
     const E_NOT_MATCHED: u64 = 2;
     const E_NOT_OWNER: u64 = 3;
 
+    #[resource_group_member(group = object::ObjectGroup)]
     struct Trading has key {
         transfer_ref: Option<TransferRef>, // none means disabled forever
         matching_collection: vector<String>, // empty means currently disabled
