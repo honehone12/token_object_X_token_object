@@ -1,0 +1,12 @@
+[package]
+name = 'TokenObjectXTokenObject'
+version = '1.0.0'
+
+
+[dependencies]
+AptosFramework = { local = "../../aptos-core/aptos-move/framework/aptos-framework" }
+AptosToken = { local = "../../aptos-core/aptos-move/framework/aptos-token" }
+AptosTokenObjects = { local = "../../aptos-core/aptos-move/framework/aptos-token-objects" }
+
+[addresses]
+token_object_x_token_object = "0xcafe"
