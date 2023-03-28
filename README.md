@@ -1,3 +1,4 @@
 # token_object_x_token_object
-mudule for trading move token object with token object.
+module for trading token object with token object, written in move.  
+designed as a component of object.
 
