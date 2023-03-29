@@ -16,10 +16,14 @@ module tradable_token_objects::trading {
     const E_NOT_MATCHED: u64 = 2;
     const E_NOT_OWNER: u64 = 3;
     const E_NOT_TOKEN: u64 = 4;
+    const E_ALREADY_STARTED: u64 = 5;
+    const E_NOT_STARTED: u64 = 6;
+    const E_OWNER_CHANGED: u64 = 7;
 
     #[resource_group_member(group = object::ObjectGroup)]
     struct Trading has key {
         transfer_ref: Option<TransferRef>, // none means disabled forever
+        lister: Option<address>,
         matching_collection: vector<String>, // empty means currently disabled
         matching_tokens: vector<String>, // empty means currently disabled
         match_all_tokens_in_collections: bool // still need collection names
@@ -43,6 +47,7 @@ module tradable_token_objects::trading {
             &obj_signer,
             Trading{
                 transfer_ref: option::some(transfer),
+                lister: option::none(),
                 matching_collection: vector::empty(),
                 matching_tokens: vector::empty(),
                 match_all_tokens_in_collections: false
@@ -50,11 +55,41 @@ module tradable_token_objects::trading {
         );
     }
 
+    public fun is_tradable_object<T: key>(object: Object<T>): bool
+    acquires Trading {
+        let obj_address = object::object_address(&object);
+        if (exists<Trading>(obj_address)) {
+            let trading = borrow_global<Trading>(obj_address);
+            option::is_some(&trading.transfer_ref)
+        } else {
+            false
+        }
+    }
+
     public fun freeze_trading<T: key>(owner: &signer, object: Object<T>)
     acquires Trading {
-        clear_matching_names(owner, object);
+        close(owner, object);
         let trading = borrow_global_mut<Trading>(object::object_address(&object));
         _ = option::extract(&mut trading.transfer_ref);   
+    }
+
+    public fun start_trading<T: key>(
+        owner: &signer,
+        object: Object<T>,
+        matching_collection_names: vector<String>,
+        matching_token_names: vector<String>,
+    )
+    acquires Trading {
+        assert!(
+            object::is_owner(object, signer::address_of(owner)), 
+            error::permission_denied(E_NOT_OWNER)
+        );
+        let trading = borrow_global_mut<Trading>(object::object_address(&object));
+        assert!(option::is_none(&trading.lister), error::invalid_argument(E_ALREADY_STARTED));
+
+        trading.lister = option::some(signer::address_of(owner));
+        trading.matching_collection = matching_collection_names;
+        trading.matching_tokens = matching_token_names;
     }
 
     public fun add_matching_names<T: key>(
@@ -69,8 +104,7 @@ module tradable_token_objects::trading {
             error::permission_denied(E_NOT_OWNER)
         );
         let trading = borrow_global_mut<Trading>(object::object_address(&object));
-        // reverse is cheaper
-        // want duplication check?
+        assert!(option::is_some(&trading.lister), error::invalid_argument(E_NOT_STARTED));
         vector::reverse_append(&mut trading.matching_collection, matching_collection_names);
         vector::reverse_append(&mut trading.matching_tokens, matching_token_names);   
         trading.match_all_tokens_in_collections = false;
@@ -83,6 +117,7 @@ module tradable_token_objects::trading {
             error::permission_denied(E_NOT_OWNER)
         );
         let trading = borrow_global_mut<Trading>(object::object_address(&object));
+        assert!(option::is_some(&trading.lister), error::invalid_argument(E_NOT_STARTED));
         trading.matching_collection = vector::empty();
         trading.matching_tokens = vector::empty();
         trading.match_all_tokens_in_collections = false;   
@@ -95,6 +130,7 @@ module tradable_token_objects::trading {
             error::permission_denied(E_NOT_OWNER)
         );
         let trading = borrow_global_mut<Trading>(object::object_address(&object));
+        assert!(option::is_some(&trading.lister), error::invalid_argument(E_NOT_STARTED));
         assert!(
             vector::length(&trading.matching_collection) > 0,
             error::invalid_argument(E_TRADING_DISABLED)
@@ -103,15 +139,17 @@ module tradable_token_objects::trading {
         trading.match_all_tokens_in_collections = true;
     }
 
-    public fun is_tradable_object<T: key>(object: Object<T>): bool
+    public fun close<T: key>(owner: &signer, object: Object<T>)
     acquires Trading {
-        let obj_address = object::object_address(&object);
-        if (exists<Trading>(obj_address)) {
-            let trading = borrow_global<Trading>(obj_address);
-            option::is_some(&trading.transfer_ref)
-        } else {
-            false
-        }
+        assert!(
+            object::is_owner(object, signer::address_of(owner)), 
+            error::permission_denied(E_NOT_OWNER)
+        );
+        let trading = borrow_global_mut<Trading>(object::object_address(&object));
+        trading.lister = option::none();
+        trading.matching_collection = vector::empty();
+        trading.matching_tokens = vector::empty();
+        trading.match_all_tokens_in_collections = false;   
     }
 
     public fun flash_offer<T1: key, T2: key>(
@@ -127,13 +165,20 @@ module tradable_token_objects::trading {
         );
 
         assert!(is_tradable_object(object_to_offer), error::unavailable(E_TRADING_DISABLED));
-        clear_matching_names(offerer, object_to_offer);
+        close(offerer, object_to_offer);
 
         let target_trading = borrow_global_mut<Trading>(object::object_address(&target_object));
         assert!(
             option::is_some(&target_trading.transfer_ref), 
             error::unavailable(E_TRADING_DISABLED)
         );
+        let target_owner_address = object::owner(target_object);
+        assert!(option::is_some(&target_trading.lister), error::invalid_argument(E_NOT_STARTED));
+        assert!(
+            option::extract(&mut target_trading.lister) == target_owner_address,
+            error::internal(E_OWNER_CHANGED)
+        );
+
         let collection = token::collection(object_to_offer);
         assert!(
             vector::contains(&target_trading.matching_collection, &collection), 
@@ -151,7 +196,6 @@ module tradable_token_objects::trading {
         target_trading.matching_tokens = vector::empty();
         target_trading.match_all_tokens_in_collections = false;
 
-        let target_owner_address = object::owner(target_object);
         object::transfer(offerer, object_to_offer, target_owner_address);
         let linear_transfer = object::generate_linear_transfer_ref(option::borrow(&target_trading.transfer_ref));
         object::transfer_with_ref(linear_transfer, offerer_address);
@@ -217,7 +261,7 @@ module tradable_token_objects::trading {
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
@@ -238,7 +282,7 @@ module tradable_token_objects::trading {
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
@@ -261,7 +305,7 @@ module tradable_token_objects::trading {
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[],
@@ -280,7 +324,7 @@ module tradable_token_objects::trading {
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[],
@@ -299,7 +343,7 @@ module tradable_token_objects::trading {
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
@@ -318,7 +362,7 @@ module tradable_token_objects::trading {
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
@@ -338,7 +382,7 @@ module tradable_token_objects::trading {
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
@@ -353,12 +397,12 @@ module tradable_token_objects::trading {
     }
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
-    #[expected_failure(abort_code = 65538, location = Self)]
+    #[expected_failure(abort_code = 65542, location = Self)]
     fun test_fail_trade_twice(account_1: &signer, account_2: &signer)
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
@@ -377,12 +421,12 @@ module tradable_token_objects::trading {
     }
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
-    #[expected_failure(abort_code = 65538, location = Self)]
+    #[expected_failure(abort_code = 65542, location = Self)]
     fun test_fail_trade_twice_2(account_1: &signer, account_2: &signer)
     acquires Trading {
         let (obj_1, obj_2) = setup_test(account_1, account_2);
 
-        add_matching_names(
+        start_trading(
             account_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
