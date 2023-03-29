@@ -1,4 +1,4 @@
-module token_object_x_token_object::trading {
+module tradable_token_objects::trading {
     use std::signer;
     use std::vector;
     use std::error;
@@ -15,6 +15,7 @@ module token_object_x_token_object::trading {
     const E_TRADING_DISABLED: u64 = 1;
     const E_NOT_MATCHED: u64 = 2;
     const E_NOT_OWNER: u64 = 3;
+    const E_NOT_TOKEN: u64 = 4;
 
     #[resource_group_member(group = object::ObjectGroup)]
     struct Trading has key {
@@ -24,7 +25,18 @@ module token_object_x_token_object::trading {
         match_all_tokens_in_collections: bool // still need collection names
     }
 
-    fun init_trading(constructor_ref: &ConstructorRef) {
+    public fun init_trading<T: key>(
+        constructor_ref: &ConstructorRef,
+        collection_name: String,
+        token_name: String 
+    ) {
+        let obj = object::object_from_constructor_ref<T>(constructor_ref);
+        assert!(
+            token::collection(obj) == collection_name &&
+            token::name(obj) == token_name,
+            error::invalid_argument(E_NOT_TOKEN)
+        );
+
         let obj_signer = object::generate_signer(constructor_ref);
         let transfer = object::generate_transfer_ref(constructor_ref);
         move_to(
@@ -38,14 +50,14 @@ module token_object_x_token_object::trading {
         );
     }
 
-    fun freeze_trading<T: key>(owner: &signer, object: Object<T>)
+    public fun freeze_trading<T: key>(owner: &signer, object: Object<T>)
     acquires Trading {
         clear_matching_names(owner, object);
         let trading = borrow_global_mut<Trading>(object::object_address(&object));
         _ = option::extract(&mut trading.transfer_ref);   
     }
 
-    fun add_matching_names<T: key>(
+    public fun add_matching_names<T: key>(
         owner: &signer,
         object: Object<T>,
         matching_collection_names: vector<String>,
@@ -64,7 +76,7 @@ module token_object_x_token_object::trading {
         trading.match_all_tokens_in_collections = false;
     }
 
-    fun clear_matching_names<T: key>(owner: &signer, object: Object<T>)
+    public fun clear_matching_names<T: key>(owner: &signer, object: Object<T>)
     acquires Trading {
         assert!(
             object::is_owner(object, signer::address_of(owner)), 
@@ -76,7 +88,7 @@ module token_object_x_token_object::trading {
         trading.match_all_tokens_in_collections = false;   
     }
 
-    fun set_matching_all_tokens_in_collections<T: key>(owner: &signer, object: Object<T>)
+    public fun set_matching_all_tokens_in_collections<T: key>(owner: &signer, object: Object<T>)
     acquires Trading {
         assert!(
             object::is_owner(object, signer::address_of(owner)), 
@@ -91,7 +103,7 @@ module token_object_x_token_object::trading {
         trading.match_all_tokens_in_collections = true;
     }
 
-    fun is_tradable<T: key>(object: Object<T>): bool
+    public fun is_tradable_object<T: key>(object: Object<T>): bool
     acquires Trading {
         let obj_address = object::object_address(&object);
         if (exists<Trading>(obj_address)) {
@@ -102,7 +114,7 @@ module token_object_x_token_object::trading {
         }
     }
 
-    fun flash_offer<T1: key, T2: key>(
+    public fun flash_offer<T1: key, T2: key>(
         offerer: &signer, 
         object_to_offer: Object<T1>, 
         target_object: Object<T2>
@@ -114,7 +126,7 @@ module token_object_x_token_object::trading {
             error::permission_denied(E_NOT_OWNER)
         );
 
-        assert!(is_tradable(object_to_offer), error::unavailable(E_TRADING_DISABLED));
+        assert!(is_tradable_object(object_to_offer), error::unavailable(E_TRADING_DISABLED));
         clear_matching_names(offerer, object_to_offer);
 
         let target_trading = borrow_global_mut<Trading>(object::object_address(&target_object));
@@ -170,12 +182,12 @@ module token_object_x_token_object::trading {
             account_1,
             utf8(b"collection1"),
             utf8(b"description1"),
-            utf8(b"name"),
+            utf8(b"name1"),
             option::none(),
             utf8(b"uri1")
         );
         move_to(&object::generate_signer(&cctor_1), FreePizzaPass{});
-        init_trading(&cctor_1);
+        init_trading<FreePizzaPass>(&cctor_1, utf8(b"collection1"), utf8(b"name1"));
 
         _ = collection::create_untracked_collection(
             account_2,
@@ -193,9 +205,11 @@ module token_object_x_token_object::trading {
             utf8(b"uri2")
         );
         move_to(&object::generate_signer(&cctor_2), FreeDonutPass{});
-        init_trading(&cctor_2);
+        init_trading<FreeDonutPass>(&cctor_2, utf8(b"collection2"), utf8(b"name2"));
 
-        (object::object_from_constructor_ref(&cctor_1), object::object_from_constructor_ref(&cctor_2))
+        let obj_1 = object::object_from_constructor_ref(&cctor_1);
+        let obj_2 = object::object_from_constructor_ref(&cctor_2);
+        (obj_1, obj_2)
     }
 
     #[test(account_1 = @0x123, account_2 = @0x234)]

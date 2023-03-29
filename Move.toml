@@ -1,5 +1,5 @@
 [package]
-name = 'TokenObjectXTokenObject'
+name = 'TradableTokenObejcts'
 version = '1.0.0'
 
 
@@ -9,4 +9,4 @@ AptosToken = { local = "../../aptos-core/aptos-move/framework/aptos-token" }
 AptosTokenObjects = { local = "../../aptos-core/aptos-move/framework/aptos-token-objects" }
 
 [addresses]
-token_object_x_token_object = "0xcafe"
+tradable_token_objects = "0xcafe"
