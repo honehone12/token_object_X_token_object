@@ -188,9 +188,7 @@ module tradable_token_objects::trading {
         target_trading.match_all_tokens_in_collections = false;
 
         object::transfer(offerer, object_to_offer, target_owner_address);
-        let linear_transfer = object::generate_linear_transfer_ref(
-            components_common::transfer_ref(option::borrow(&target_trading.transfer_key))
-        );
+        let linear_transfer = components_common::generate_linear_transfer_ref(option::borrow(&target_trading.transfer_key));
         object::transfer_with_ref(linear_transfer, offerer_address);
     }
 
@@ -247,11 +245,84 @@ module tradable_token_objects::trading {
         let ex_2 = object::generate_extend_ref(&cctor_2);
         let obj_2 = object::object_from_constructor_ref(&cctor_2);
         init_trading<FreeDonutPass>(&ex_2, obj_2, utf8(b"collection2"), utf8(b"name2"));
+        // wrong names
+        // init_trading<FreeDonutPass>(&ex_2, obj_2, utf8(b"collection-bad"), utf8(b"name2"));
+        // init_trading<FreeDonutPass>(&ex_2, obj_2, utf8(b"collection2"), utf8(b"name-bad"));
 
         (
             obj_1, components_common::create_transfer_key(&cctor_1), 
             obj_2, components_common::create_transfer_key(&cctor_2)
         )
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    fun test_matching_names(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, _, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection2")],
+            vector<String>[utf8(b"name2")]
+        );
+
+        {
+            let obj_1_addr = object::object_address(&obj_1);
+            let trading_1 = borrow_global<Trading>(obj_1_addr);
+            assert!(option::is_some(&trading_1.lister), 0);
+            assert!(trading_1.matching_collection == vector<String>[utf8(b"collection2")], 1);
+            assert!(trading_1.matching_tokens == vector<String>[utf8(b"name2")], 2);
+            assert!(!trading_1.match_all_tokens_in_collections, 3);
+            assert!(option::is_some(&trading_1.transfer_key), 4);
+        };
+
+        set_matching_all_tokens_in_collections(account_1, obj_1);
+        {
+            let obj_1_addr = object::object_address(&obj_1);
+            let trading_1 = borrow_global<Trading>(obj_1_addr);
+            assert!(trading_1.match_all_tokens_in_collections, 4);
+        };
+
+        add_matching_names(account_1, obj_1, vector<String>[utf8(b"collection3")], vector<String>[utf8(b"name3")]);
+        {
+            let obj_1_addr = object::object_address(&obj_1);
+            let trading_1 = borrow_global<Trading>(obj_1_addr);
+            assert!(option::is_some(&trading_1.lister), 0);
+            assert!(trading_1.matching_collection == vector<String>[utf8(b"collection2"), utf8(b"collection3")], 1);
+            assert!(trading_1.matching_tokens == vector<String>[utf8(b"name3")], 2);
+            assert!(!trading_1.match_all_tokens_in_collections, 3);
+            assert!(option::is_some(&trading_1.transfer_key), 4);
+        };
+
+        clear_matching_names(account_1, obj_1);
+        {
+            let obj_1_addr = object::object_address(&obj_1);
+            let trading_1 = borrow_global<Trading>(obj_1_addr);
+            assert!(option::is_some(&trading_1.lister), 3);
+            assert!(vector::is_empty(&trading_1.matching_collection), 4);
+            assert!(vector::is_empty(&trading_1.matching_tokens), 5);
+            assert!(!trading_1.match_all_tokens_in_collections, 6);
+        };
+
+        close(account_1, obj_1);
+        {
+            let obj_1_addr = object::object_address(&obj_1);
+            let trading_1 = borrow_global<Trading>(obj_1_addr);
+            assert!(!option::is_some(&trading_1.lister), 3);
+            assert!(option::is_some(&trading_1.transfer_key), 4);
+        };
+
+        let ret = freeze_trading(account_1, obj_1);
+        {
+            let obj_1_addr = object::object_address(&obj_1);
+            let trading_1 = borrow_global<Trading>(obj_1_addr);
+            assert!(option::is_none(&trading_1.transfer_key), 5);
+        };
+
+        components_common::destroy_for_test(key_2);
+        components_common::destroy_for_test(ret);
     }
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
@@ -271,15 +342,25 @@ module tradable_token_objects::trading {
             obj_2,
             obj_1
         );
+        let ret = freeze_trading(account_2, obj_1);
 
         assert!(object::is_owner(obj_1, @0x234), 0);
         assert!(object::is_owner(obj_2, @0x123), 1);
 
+        {
+            let trading_1 = borrow_global<Trading>(object::object_address(&obj_1));
+            assert!(option::is_none(&trading_1.lister), 2);
+            assert!(vector::is_empty(&trading_1.matching_collection), 3);
+            assert!(vector::is_empty(&trading_1.matching_tokens), 4);
+            assert!(!trading_1.match_all_tokens_in_collections, 5);
+        };
+
+        components_common::destroy_for_test(ret);
         components_common::destroy_for_test(key_2);
     }
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
-    fun test_2(account_1: &signer, account_2: &signer)
+    fun test_any(account_1: &signer, account_2: &signer)
     acquires Trading {
         let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
 
@@ -288,7 +369,7 @@ module tradable_token_objects::trading {
             key_1,
             obj_1,
             vector<String>[utf8(b"collection2")],
-            vector<String>[utf8(b"name2")]
+            vector<String>[]
         );
         set_matching_all_tokens_in_collections(account_1, obj_1);
         flash_offer(
@@ -296,16 +377,18 @@ module tradable_token_objects::trading {
             obj_2,
             obj_1
         );
+        let ret = freeze_trading(account_2, obj_1);
 
         assert!(object::is_owner(obj_1, @0x234), 0);
         assert!(object::is_owner(obj_2, @0x123), 1);
 
+        components_common::destroy_for_test(ret);
         components_common::destroy_for_test(key_2);
     }
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
     #[expected_failure(abort_code = 65538, location = Self)]
-    fun test_fail_empty(account_1: &signer, account_2: &signer)
+    fun test_fail_matching_empty(account_1: &signer, account_2: &signer)
     acquires Trading {
         let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
 
@@ -327,7 +410,7 @@ module tradable_token_objects::trading {
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
     #[expected_failure(abort_code = 65538, location = Self)]
-    fun test_fail_empty_2(account_1: &signer, account_2: &signer)
+    fun test_fail_matching_empty_2(account_1: &signer, account_2: &signer)
     acquires Trading {
         let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
 
@@ -349,7 +432,7 @@ module tradable_token_objects::trading {
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
     #[expected_failure(abort_code = 65538, location = Self)]
-    fun test_fail_empty_3(account_1: &signer, account_2: &signer)
+    fun test_fail_matching_empty_3(account_1: &signer, account_2: &signer)
     acquires Trading {
         let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
 
@@ -418,25 +501,6 @@ module tradable_token_objects::trading {
 
     #[test(account_1 = @0x123, account_2 = @0x234)]
     #[expected_failure]
-    fun test_fail_freeze(account_1: &signer, account_2: &signer)
-    acquires Trading {
-        let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
-
-        start_trading(
-            account_1,
-            key_1,
-            obj_1,
-            vector<String>[utf8(b"collection2")],
-            vector<String>[utf8(b"name2")]
-        );
-        let key = freeze_trading(account_2, obj_2);
-
-        components_common::destroy_for_test(key);
-        components_common::destroy_for_test(key_2);
-    }
-
-    #[test(account_1 = @0x123, account_2 = @0x234)]
-    #[expected_failure]
     fun test_fail_trade_twice(account_1: &signer, account_2: &signer)
     acquires Trading {
         let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
@@ -486,6 +550,215 @@ module tradable_token_objects::trading {
             obj_2
         );
 
+        components_common::destroy_for_test(key_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    #[expected_failure(abort_code = 327683, location = Self)]
+    fun test_fail_wrong_claim(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection2")],
+            vector<String>[utf8(b"name2")]
+        );
+        flash_offer(
+            account_2,
+            obj_2,
+            obj_1
+        );
+        let ret = freeze_trading(account_1, obj_1);
+
+        components_common::destroy_for_test(ret);
+        components_common::destroy_for_test(key_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    fun test_listing_both(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection2")],
+            vector<String>[utf8(b"name2")]
+        );
+        start_trading(
+            account_2,
+            key_2,
+            obj_2,
+            vector<String>[utf8(b"collection1")],
+            vector<String>[utf8(b"name1")]
+        );
+
+        flash_offer(
+            account_2,
+            obj_2,
+            obj_1
+        );
+
+        {
+            let trading_2 = borrow_global<Trading>(object::object_address(&obj_2));
+            assert!(option::is_none(&trading_2.lister), 3);
+            assert!(vector::is_empty(&trading_2.matching_collection), 4);
+            assert!(vector::is_empty(&trading_2.matching_tokens), 5);
+            assert!(!trading_2.match_all_tokens_in_collections, 6);
+        };
+
+        let ret_1 = freeze_trading(account_2, obj_1);
+        let ret_2 = freeze_trading(account_1, obj_2);
+
+        assert!(object::is_owner(obj_1, @0x234), 0);
+        assert!(object::is_owner(obj_2, @0x123), 1);
+
+        components_common::destroy_for_test(ret_1);
+        components_common::destroy_for_test(ret_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    #[expected_failure]
+    fun test_fail_offer_self(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, _, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection1")],
+            vector<String>[utf8(b"name1")]
+        );
+
+        flash_offer(
+            account_1,
+            obj_1,
+            obj_1
+        );
+
+        let ret_1 = freeze_trading(account_1, obj_1);
+        components_common::destroy_for_test(ret_1);
+        components_common::destroy_for_test(key_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    #[expected_failure]
+    fun test_fail_offer_self_2(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, _, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection1")],
+            vector<String>[]
+        );
+        set_matching_all_tokens_in_collections(account_1, obj_1);
+
+        flash_offer(
+            account_1,
+            obj_1,
+            obj_1
+        );
+
+        let ret_1 = freeze_trading(account_1, obj_1);
+        components_common::destroy_for_test(ret_1);
+        components_common::destroy_for_test(key_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    #[expected_failure(abort_code = 327683, location = Self)]
+    fun test_fail_add_no_owner(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection2")],
+            vector<String>[utf8(b"name2")]
+        );
+        add_matching_names(account_2, obj_1, vector<String>[utf8(b"collection3")], vector<String>[utf8(b"name2")]);
+        flash_offer(
+            account_2,
+            obj_2,
+            obj_1
+        );
+        let ret = freeze_trading(account_2, obj_1);
+        components_common::destroy_for_test(ret);
+        components_common::destroy_for_test(key_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    #[expected_failure(abort_code = 327683, location = Self)]
+    fun test_fail_clear_no_owner(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection2")],
+            vector<String>[utf8(b"name2")]
+        );
+        clear_matching_names(account_2, obj_1);
+        flash_offer(
+            account_2,
+            obj_2,
+            obj_1
+        );
+        let ret = freeze_trading(account_2, obj_1);
+        components_common::destroy_for_test(ret);
+        components_common::destroy_for_test(key_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    #[expected_failure(abort_code = 327683, location = Self)]
+    fun test_fail_set_any_no_owner(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, obj_2, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection2")],
+            vector<String>[utf8(b"name2")]
+        );
+        set_matching_all_tokens_in_collections(account_2, obj_1);
+        flash_offer(
+            account_2,
+            obj_2,
+            obj_1
+        );
+        let ret = freeze_trading(account_2, obj_1);
+        components_common::destroy_for_test(ret);
+        components_common::destroy_for_test(key_2);
+    }
+
+    #[test(account_1 = @0x123, account_2 = @0x234)]
+    #[expected_failure(abort_code = 327683, location = Self)]
+    fun test_fail_freeze_no_owner(account_1: &signer, account_2: &signer)
+    acquires Trading {
+        let (obj_1, key_1, _, key_2) = setup_test(account_1, account_2);
+
+        start_trading(
+            account_1,
+            key_1,
+            obj_1,
+            vector<String>[utf8(b"collection2")],
+            vector<String>[utf8(b"name2")]
+        );
+        let ret = freeze_trading(account_2, obj_1);
+        components_common::destroy_for_test(ret);
         components_common::destroy_for_test(key_2);
     }
 }
