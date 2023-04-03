@@ -1,4 +1,4 @@
-module tradable_token_objects::trading {
+module tradable_token_objects::tradings {
     use std::signer;
     use std::vector;
     use std::error;
