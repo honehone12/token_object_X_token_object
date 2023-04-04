@@ -7,6 +7,7 @@ module tradable_token_objects::tradings {
     use aptos_framework::object::{Self, Object, ExtendRef};
     use aptos_token_objects::token;
     use components_common::components_common::{Self, ComponentGroup, TransferKey};
+    use components_common::token_objects_store;
 
     const E_TRADING_DISABLED: u64 = 1;
     const E_NOT_MATCHED: u64 = 2;
@@ -193,6 +194,11 @@ module tradable_token_objects::tradings {
         object::transfer(offerer, object_to_offer, target_owner_address);
         let linear_transfer = components_common::generate_linear_transfer_ref(option::borrow(&target_trading.transfer_key));
         object::transfer_with_ref(linear_transfer, offerer_address);
+    
+        token_objects_store::update(target_owner_address, target_object);
+        token_objects_store::update(target_owner_address, object_to_offer);
+        token_objects_store::update(offerer_address, target_object);
+        token_objects_store::update(offerer_address, object_to_offer);
     }
 
     #[test_only]
@@ -251,6 +257,9 @@ module tradable_token_objects::tradings {
         // wrong names
         // init_trading<FreeDonutPass>(&ex_2, obj_2, utf8(b"collection-bad"), utf8(b"name2"));
         // init_trading<FreeDonutPass>(&ex_2, obj_2, utf8(b"collection2"), utf8(b"name-bad"));
+
+        token_objects_store::register(account_1);
+        token_objects_store::register(account_2);
 
         (
             obj_1, components_common::create_transfer_key(cctor_1), 
