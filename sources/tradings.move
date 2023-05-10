@@ -18,7 +18,7 @@ module tradable_token_objects::tradings {
     const E_OBJECT_REF_NOT_MATCH: u64 = 7;
     const E_NOT_TRADABLE_OBJECT: u64 = 8;
 
-    // CRITICAL
+    // ************CRITICAL*******************
     // DON'T use name of tokens for matching or searching
     // fake collection can have same name and same token name
     // (even same token name inside collection is possible when minter is not only ADMIN)
@@ -30,6 +30,7 @@ module tradable_token_objects::tradings {
         transfer_key: Option<TransferKey>,
 
         lister: Option<address>,
+        // ************CRITICAL*******************
         // THESE ARE CRITICAL MISTAKE
         // matching_collection: vector<String>, // empty match none
         // matching_tokens: vector<String>, // empty match none
@@ -39,8 +40,10 @@ module tradable_token_objects::tradings {
     public fun init_trading<T: key>(
         extend_ref: &ExtendRef,
         object: Object<T>,
-        collection_name: String,
-        token_name: String 
+        // ************CRITICAL*******************
+        // THESE ARE CRITICAL MISTAKE
+        // collection_name: String,
+        // token_name: String 
     ) {
         assert!(
             token::collection(object) == collection_name &&
@@ -70,8 +73,10 @@ module tradable_token_objects::tradings {
         owner: &signer,
         transfer_key: TransferKey,
         object: Object<T>,
-        matching_collection_names: vector<String>,
-        matching_token_names: vector<String>,
+        // ************CRITICAL*******************
+        // THESE ARE CRITICAL MISTAKE
+        // matching_collection_names: vector<String>,
+        // matching_token_names: vector<String>,
     )
     acquires Trading {
         assert!(
@@ -93,8 +98,10 @@ module tradable_token_objects::tradings {
     public entry fun add_matching_names<T: key>(
         owner: &signer,
         object: Object<T>,
-        matching_collection_names: vector<String>,
-        matching_token_names: vector<String>
+        // ************CRITICAL*******************
+        // THESE ARE CRITICAL MISTAKE
+        // matching_collection_names: vector<String>,
+        // matching_token_names: vector<String>
     )
     acquires Trading {
         assert!(
