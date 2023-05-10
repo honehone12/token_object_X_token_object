@@ -19,7 +19,7 @@ module tradable_token_objects::tradings {
     const E_NOT_TRADABLE_OBJECT: u64 = 8;
 
     // CRITICAL
-    // DON'T use name of tokens for matchin or searching
+    // DON'T use name of tokens for matching or searching
     // fake collection can have same name and same token name
     // (even same token name inside collection is possible when minter is not only ADMIN)
     // just use address
