@@ -20,8 +20,8 @@ module tradable_token_objects::tradings {
 
     // CRITICAL
     // DON'T use name of tokens for matchin or searching
-    // name is unique ONLY within collections
     // fake collection can have same name and same token name
+    // (even same token name inside collection is possible when minter is not only ADMIN)
     // just use address
 
     #[resource_group_member(group = ComponentGroup)]
