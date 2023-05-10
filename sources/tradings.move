@@ -18,13 +18,20 @@ module tradable_token_objects::tradings {
     const E_OBJECT_REF_NOT_MATCH: u64 = 7;
     const E_NOT_TRADABLE_OBJECT: u64 = 8;
 
+    // CRITICAL
+    // DON'T use name of tokens for matchin or searching
+    // name is unique ONLY within collections
+    // fake collection can have same name and same token name
+    // just use address
+
     #[resource_group_member(group = ComponentGroup)]
     struct Trading has key {
         transfer_key: Option<TransferKey>,
 
         lister: Option<address>,
-        matching_collection: vector<String>, // empty match none
-        matching_tokens: vector<String>, // empty match none
+        // THESE ARE CRITICAL MISTAKE
+        // matching_collection: vector<String>, // empty match none
+        // matching_tokens: vector<String>, // empty match none
         match_all_tokens_in_collections: bool // still need collection names
     }
 
